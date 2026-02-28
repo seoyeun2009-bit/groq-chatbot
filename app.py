@@ -7,13 +7,8 @@ st.set_page_config(page_title="번개 챗봇 AI", page_icon="⚡")
 st.markdown(
     """
     <style>
-    /* 전체 배경색: 레몬 쉬폰 */
     .stApp {
-        background-color: #FFFACD;
-    }
-    /* 사이드바 스타일 조정: 불필요한 공백 제거 및 파일 업로더 강조 */
-    [data-testid="stSidebar"] {
-        background-color: #f8f9fa;
+        background-color: #FFFACD; /* 레몬 쉬폰 배경 */
     }
     </style>
     """,
@@ -27,16 +22,17 @@ except Exception:
     st.error("⚠️ Streamlit Secrets에 'GROQ_API_KEY'를 설정해주세요.")
     st.stop()
 
-# 3. 세션 상태 초기화
+# 3. 세션 상태 초기화 (프롬프트 보강: 이름 오인식 방지)
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {
             "role": "system", 
             "content": (
                 "너는 코딩을 아주 쉽게 알려주는 친절한 선생님 '번개 챗봇 AI'야. "
-                "사용자가 이름을 알려주면 반드시 기억하고 대화 중에 언급해줘. "
-                "답변은 DBpia, 학술 논문, 뉴스 기사, 전문 서적 등 공신력 있는 자료를 최우선으로 참고해. "
-                "사용자가 사진을 업로드하면, 그 사진의 맥락에 맞는 답변을 하도록 노력해줘."
+                "사용자가 이름을 말하면 절대로 임의로 변환(예: '먀'를 'mxArray'로 변환 등)하지 말고 "
+                "있는 그대로의 이름을 기억해서 대화 중에 불러줘. 한 글자나 두 글자 이름도 소중히 기억해줘. "
+                "답변은 반드시 DBpia, 외국 논문, 뉴스 기사 등을 위주로 공신력 있게 답변하고, "
+                "사이드바에 사진이 업로드되면 해당 사진의 내용을 기반으로 친절하게 설명해줘."
             )
         },
         {
@@ -45,18 +41,14 @@ if "messages" not in st.session_state:
         }
     ]
 
-# 4. 사이드바 구성 (파일 업로드 기능이 확실히 보이도록 수정)
+# 4. 사이드바 구성 (파일 업로드)
 with st.sidebar:
     st.title("⚡ 번개 챗봇 메뉴")
-    
     st.markdown("---")
-    
-    # [수정] 파일 업로더가 숨겨지지 않도록 표준 함수 사용
     st.subheader("📸 이미지 첨부")
     uploaded_file = st.file_uploader(
         "사진을 업로드하고 질문해보세요!", 
-        type=["jpg", "png", "jpeg"],
-        help="질문과 관련된 이미지가 있다면 여기에 올려주세요."
+        type=["jpg", "png", "jpeg"]
     )
     
     if uploaded_file is not None:
@@ -64,7 +56,6 @@ with st.sidebar:
         st.success("✅ 이미지가 준비되었습니다.")
 
     st.markdown("---")
-    
     if st.button("🔄 대화 내용 지우기"):
         st.session_state.messages = [
             st.session_state.messages[0],
@@ -80,10 +71,10 @@ for message in st.session_state.messages:
 
 # 6. 사용자 입력 및 AI 답변 생성
 if prompt := st.chat_input("메시지를 입력하세요..."):
-    # 이미지 업로드 여부에 따른 맥락 추가
+    # 이미지 업로드 맥락 추가
     actual_prompt = prompt
     if uploaded_file is not None:
-        actual_prompt = f"[참고: 사용자가 이미지를 업로드한 상태임] {prompt}"
+        actual_prompt = f"[이미지 참고함] {prompt}"
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -94,12 +85,15 @@ if prompt := st.chat_input("메시지를 입력하세요..."):
         full_response = ""
         
         try:
+            # AI에게 현재 대화 맥락 전달 (마지막 사용자 입력은 actual_prompt로 대체)
+            api_messages = []
+            for m in st.session_state.messages[:-1]:
+                api_messages.append({"role": m["role"], "content": m["content"]})
+            api_messages.append({"role": "user", "content": actual_prompt})
+
             completion = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": m["role"], "content": m["content"] if m["role"] != "user" else actual_prompt}
-                    for m in st.session_state.messages
-                ],
+                messages=api_messages,
                 stream=True
             )
 
